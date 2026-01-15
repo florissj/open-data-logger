@@ -1,10 +1,10 @@
 # open-data-logger
 
-The project consists on an open-hardware data logger focused on vehicle
-dynamics and human control research, specially bicycles and single-track
+The project consists of an open-hardware data logger focused on vehicle
+dynamics and human control research, especially bicycles and single-track
 vehicles.
 
-This is in an early stage of development, so here you will find base and
+This is in an early stage of development, so here you will find the base and
 [contribution](#Contribution) guidelines.
 
 
@@ -12,7 +12,7 @@ This is in an early stage of development, so here you will find base and
 
 Most of the time, when we decide to run an experiment, we need to figure out the
 data collection method, which usually ends in a 'new system' from scratch. This 
-is time consuming, and constraints the compatibility among different and legacy
+is time-consuming, and constrains the compatibility among different and legacy
 projects. For this reason, the main idea of this project is to create a robust 
 data-logger core, which is expandable through independent modules in a 
 'plug-and-play' setting.
@@ -78,4 +78,4 @@ data management and HREC procedures.*
 
 - **software:** *Code for processing, analysis and simulation.*
 
-- **publication**: *The publication resulting from this project.
+- **publication**: *The publication resulting from this project.*
