@@ -65,17 +65,41 @@ Program from TU Delft.
 
 The project is organized in the following file system:
 
-- **data:** *All raw, processed, and external data used in your project as well 
-as result files genertated by your analyses.*
+- **data:** *All raw, processed, and external data used in the project as well 
+as result files genertated by the analyses.*
 
 - **designs:** *Design files of (drawings, 3D print files, schematics) of the 
-devices and hardware components you create in your project.*
+devices and hardware components created in the project.*
 
-- **documentation:** *Put the documentation of your project here. This includes 
-data management and HREC procedures.*
+- **documentation:** *This includes user guides, contribution guidelines, data 
+management plan, and HREC procedures.*
 
 - **notes:** *Space for any additional notes you create.*
 
 - **software:** *Code for processing, analysis and simulation.*
 
-- **publication**: *The publication resulting from this project.*
+- **publication**: *Documents related to publication and share of the work. This 
+includes the final publication, conference abstracts, etc.*
+
+
+## Repository structure
+```
+data\
+----README.md
+
+designs\
+
+documentation\
+
+notes\
+
+publication\
+
+software\
+
+LICENSE
+
+README.md
+
+
+```

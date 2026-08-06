@@ -96,4 +96,3 @@ The 10 pin dupont wire used for the interface is also colour coded, which ideall
 | 8                          | 39         | LED RED       | Gray   |
 | 9                          | VCC        |               | White  |
 | 10                         | GND        |               | Black  | 
-
