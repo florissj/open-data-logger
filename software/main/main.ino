@@ -8,121 +8,80 @@
 #define WIRE_PORT Wire
 #define AD0_VAL 1
 
-// Display Setup
+// --- DISPLAY SETUP ---
+// Gebruik NONAME voor correcte weergave (geen strepen)
 U8G2_SSD1305_128X32_NONAME_F_HW_I2C u8g2(U8G2_R0, U8X8_PIN_NONE);
 
 ICM_20948_I2C ICM;
 
-// Global Variables
+// --- Global Variables ---
+const int buttonPin = 1;         
+const int rotaryPinA = 31;
+const int rotaryPinB = 32;
+const int rotaryButtonPin = 30; 
+
+// Encoder & Button Logic
 int aState;
 int aLastState;  
-int counter = 1; // Start op 1
-int buttonPin = 1; 
-int rotaryPinA = 31;
-int rotaryPinB = 32;
-int rotaryButtonPin = 30;
-int buttonRead;
-int previous = LOW;
-bool initialized = false;
-bool bCW;
-unsigned long lastTime = 0;
-unsigned long debounce = 200UL;
-const int chipSelect = BUILTIN_SDCARD;
+int rotaryButtonState;
+int lastRotaryButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 50;
 
-// NEW: Timer for the display to prevent lag
-unsigned long lastDisplayTime = 0;
+// Menu Logic
+int menuIndex = 0; 
+const int maxMenuItems = 4;
+const char* menuItems[] = {"Angles", "Accel", "Gyro", "Magnet"};
 
-// Storage for calculated Euler angles
+// State Machine
+enum AppState { STATE_MENU, STATE_DATA };
+AppState currentState = STATE_MENU;
+
+// Sensor Data
 double roll = 0.0, pitch = 0.0, yaw = 0.0;
 double roll0 = 0.0, pitch0 = 0.0, yaw0 = 0.0;
 double rollZ = 0.0, pitchZ = 0.0, yawZ = 0.0;
+
+unsigned long lastDisplayTime = 0;
+
+// Zero Reset Button Logic
+int buttonRead, previous = LOW;
+unsigned long lastTime = 0;
+unsigned long debounce = 200UL;
 
 void setup() {
   pinMode(buttonPin, INPUT);
   pinMode(rotaryPinA, INPUT_PULLUP);
   pinMode(rotaryPinB, INPUT_PULLUP);
   pinMode(rotaryButtonPin, INPUT_PULLUP);
+  
   SERIAL_PORT.begin(115200);
   
+  // Lees de startwaarde van Pin A
   aLastState = digitalRead(rotaryPinA);
-  // Initialize Display
-  u8g2.begin();
   
+  u8g2.begin();
   WIRE_PORT.begin();
   WIRE_PORT.setClock(400000);
 
-  // Initialize Sensor
   ICM.begin(WIRE_PORT, AD0_VAL);
-  
-  if (ICM.status != ICM_20948_Stat_Ok) {
-    SERIAL_PORT.println("Trying again...");
-    delay(500);
-  } else {
-    initialized = true;
-  }
+  if (ICM.status != ICM_20948_Stat_Ok) SERIAL_PORT.println("Sensor error");
 
-  // --- DMP CONFIGURATION ---
-  bool success = true;
-  success &= (ICM.initializeDMP() == ICM_20948_Stat_Ok);
-  success &= (ICM.enableDMPSensor(INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR) == ICM_20948_Stat_Ok);
-  // Set rate to 0 (Max speed)
-  success &= (ICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 0) == ICM_20948_Stat_Ok);
-  success &= (ICM.enableFIFO() == ICM_20948_Stat_Ok);
-  success &= (ICM.enableDMP() == ICM_20948_Stat_Ok);
-  success &= (ICM.resetDMP() == ICM_20948_Stat_Ok);
-  success &= (ICM.resetFIFO() == ICM_20948_Stat_Ok);
-
-  if (success) {
-    SERIAL_PORT.println(F("DMP enabled!"));
-  } else {
-    SERIAL_PORT.println(F("Enable DMP failed!"));
-  }
-  // Let op: SD kaart logica heb ik laten staan, maar zorg dat de kaart erin zit of comment dit uit als het hangt
-  File logFile = SD.open("/TEST.csv", FILE_WRITE);
+  // DMP Setup
+  ICM.initializeDMP();
+  ICM.enableDMPSensor(INV_ICM20948_SENSOR_GAME_ROTATION_VECTOR);
+  ICM.setDMPODRrate(DMP_ODR_Reg_Quat6, 0);
+  ICM.enableFIFO();
+  ICM.enableDMP();
+  ICM.resetDMP();
+  ICM.resetFIFO();
 }
 
 void loop() {
-  // --- Button Logic (Reset Zero) ---
-  buttonRead = digitalRead(buttonPin);
-  if (buttonRead == HIGH && previous == LOW && millis() - lastTime > debounce) {
-    lastTime = millis();
-    roll0 = roll;
-    pitch0 = pitch;
-    yaw0 = yaw;
-  }
-  previous = buttonRead;
-
-  // --- Rotary Encoder Logic ---
-  aState = digitalRead(rotaryPinA);
-  if (aState != aLastState){ 
-    if (digitalRead(rotaryPinB) != aState) { 
-      // Met de klok mee (CW)
-      counter++;
-    } else { 
-      // Tegen de klok in (CCW)
-      counter--;
-    }
-
-    // --- HIER ZIT DE FIX ---
-    // We laten hem doorlopen tot 9 (omdat 7 -> 8 -> 9 reset naar 1)
-    if (counter > 8) {
-      counter = 1;
-    }
-    // We laten hem doorlopen tot -1 (omdat 1 -> 0 -> -1 reset naar 7)
-    if (counter < 0) {
-      counter = 7;
-    }
-    
-    Serial.print("Encoder Positie: ");
-    Serial.println(counter);
-  }
-  aLastState = aState; 
-
-  // ... De rest van je DMP en Display code blijft hetzelfde ...
-  // --- DMP Data Read & Math ---
+  // Start ICM loop
   icm_20948_DMP_data_t data;
   ICM.readDMPdataFromFIFO(&data);
-  ICM.getAGMT();
+  ICM.getAGMT(); 
 
   if ((ICM.status == ICM_20948_Stat_Ok) || (ICM.status == ICM_20948_Stat_FIFOMoreDataAvail)) {
     if ((data.header & DMP_header_bitmap_Quat6) > 0) {
@@ -131,10 +90,7 @@ void loop() {
       double q3 = ((double)data.Quat6.Data.Q3) / 1073741824.0;
       double q0 = sqrt(1.0 - ((q1 * q1) + (q2 * q2) + (q3 * q3)));
 
-      double qw = q0;
-      double qx = q2;
-      double qy = q1;
-      double qz = -q3;
+      double qw = q0; double qx = q2; double qy = q1; double qz = -q3;
 
       double t0 = +2.0 * (qw * qx + qy * qz);
       double t1 = +1.0 - 2.0 * (qx * qx + qy * qy);
@@ -142,8 +98,7 @@ void loop() {
       rollZ = roll - roll0; 
 
       double t2 = +2.0 * (qw * qy - qx * qz);
-      t2 = t2 > 1.0 ? 1.0 : t2;
-      t2 = t2 < -1.0 ? -1.0 : t2;
+      t2 = t2 > 1.0 ? 1.0 : t2; t2 = t2 < -1.0 ? -1.0 : t2;
       pitch = asin(t2) * 180.0 / PI;
       pitchZ = pitch - pitch0;
       
@@ -153,48 +108,103 @@ void loop() {
       yawZ = yaw - yaw0;
     }
   }
+  // End ICM loop
+  // Input H
+  buttonRead = digitalRead(buttonPin);
+  if (buttonRead == HIGH && previous == LOW && millis() - lastTime > debounce) {
+    lastTime = millis();
+    roll0 = roll; pitch0 = pitch; yaw0 = yaw;
+  }
+  previous = buttonRead;
 
-  // --- Display Logic (THROTTLED) ---
+  // --- ROTARY ENCODER (1-stap fix) ---
+  aState = digitalRead(rotaryPinA);
+  
+  // We reageren nu ALLEEN als de status van HOOG naar LAAG gaat (Falling edge)
+  // Dit halveert het aantal pulsen en lost het 2-stappen probleem op.
+  if (aState == LOW && aLastState == HIGH && currentState == STATE_MENU) {
+    
+    // Lees Pin B om de richting te bepalen
+    // Als B ook LOW is, draaien we de ene kant op, anders de andere kant.
+    if (digitalRead(rotaryPinB) == LOW) {
+      menuIndex++; 
+    } else {
+      menuIndex--;
+    }
+    
+    // Wrap around logic
+    if (menuIndex >= maxMenuItems) menuIndex = 0;
+    if (menuIndex < 0) menuIndex = maxMenuItems - 1;
+  }
+  aLastState = aState; // Update de status voor de volgende loop
+
+  // --- ROTARY BUTTON ---
+  int reading = digitalRead(rotaryButtonPin);
+  if (reading != lastRotaryButtonState) lastDebounceTime = millis();
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading != rotaryButtonState) {
+      rotaryButtonState = reading;
+      if (rotaryButtonState == LOW) {
+        // Toggle tussen Menu en Data
+        if (currentState == STATE_MENU) currentState = STATE_DATA;
+        else currentState = STATE_MENU;
+      }
+    }
+  }
+  lastRotaryButtonState = reading;
+
+  // --- 3. DISPLAY ---
   if (millis() - lastDisplayTime > 50) { 
     lastDisplayTime = millis();
-    
     u8g2.clearBuffer();
-    u8g2.setFont(u8g2_font_5x7_tr);
     
-    if(counter == 1){
-      u8g2.setCursor(5, 10);
-      u8g2.print("Roll: "); u8g2.print(rollZ);
-      u8g2.setCursor(5, 20);
-      u8g2.print("Pitch: "); u8g2.print(pitchZ);
-      u8g2.setCursor(5, 30);
-      u8g2.print("Yaw: "); u8g2.print(yawZ);
+    if (currentState == STATE_MENU) {
+      drawMenu();
+    } else {
+      drawData();
     }
-    else if(counter == 3){
-      u8g2.setCursor(5, 10);
-      u8g2.print("Acc X: "); u8g2.print(ICM.agmt.acc.axes.x);
-      u8g2.setCursor(5, 20);
-      u8g2.print("Acc Y: "); u8g2.print(ICM.agmt.acc.axes.y);
-      u8g2.setCursor(5, 30);
-      u8g2.print("Acc Z: "); u8g2.print(ICM.agmt.acc.axes.z);
-    }
-    else if(counter == 5){
-      u8g2.setCursor(5, 10);
-      u8g2.print("Gyro X: "); u8g2.print(ICM.agmt.gyr.axes.x);
-      u8g2.setCursor(5, 20);
-      u8g2.print("Gyro Y: "); u8g2.print(ICM.agmt.gyr.axes.y);
-      u8g2.setCursor(5, 30);
-      u8g2.print("Gyro Z: "); u8g2.print(ICM.agmt.gyr.axes.z);
-    }
-    else if(counter == 7){
-      u8g2.setCursor(5, 10);
-      u8g2.print("Mag X: "); u8g2.print(ICM.agmt.mag.axes.x);
-      u8g2.setCursor(5, 20);
-      u8g2.print("Mag Y: "); u8g2.print(ICM.agmt.mag.axes.y);
-      u8g2.setCursor(5, 30);
-      u8g2.print("Mag Z: "); u8g2.print(ICM.agmt.mag.axes.z);
-    }
-    // Bij counter == 0, 2, 4, 6, 8 blijft het scherm leeg (tussenstapjes)
-
     u8g2.sendBuffer();
   }
+}
+
+
+
+void drawMenu() {
+  u8g2.setFont(u8g2_font_5x7_tr);
+
+  int prevIndex = (menuIndex - 1 + maxMenuItems) % maxMenuItems;
+  int nextIndex = (menuIndex + 1) % maxMenuItems;
+
+  // Vorige
+  u8g2.setCursor(12, 8); 
+  u8g2.print(menuItems[prevIndex]);
+
+  // Huidige (met pijl)
+  u8g2.setCursor(0, 19); 
+  u8g2.print("> ");
+  u8g2.print(menuItems[menuIndex]);
+
+  // Volgende
+  u8g2.setCursor(12, 30); 
+  u8g2.print(menuItems[nextIndex]);
+}
+
+void drawData() {
+  u8g2.setFont(u8g2_font_5x7_tr);
+  
+  double v1, v2, v3;
+  const char *l1, *l2, *l3;
+
+  switch(menuIndex) {
+    case 0: l1="Roll : "; v1=rollZ; l2="Pitch: "; v2=pitchZ; l3="Yaw  : "; v3=yawZ; break;
+    case 1: l1="Acc X: "; v1=ICM.agmt.acc.axes.x; l2="Acc Y: "; v2=ICM.agmt.acc.axes.y; l3="Acc Z: "; v3=ICM.agmt.acc.axes.z; break;
+    case 2: l1="Gyr X: "; v1=ICM.agmt.gyr.axes.x; l2="Gyr Y: "; v2=ICM.agmt.gyr.axes.y; l3="Gyr Z: "; v3=ICM.agmt.gyr.axes.z; break;
+    case 3: l1="Mag X: "; v1=ICM.agmt.mag.axes.x; l2="Mag Y: "; v2=ICM.agmt.mag.axes.y; l3="Mag Z: "; v3=ICM.agmt.mag.axes.z; break;
+  }
+
+  // Data netjes uitgelijnd op 5,10 / 5,20 / 5,30
+  u8g2.setCursor(5, 10); u8g2.print(l1); u8g2.print(v1);
+  u8g2.setCursor(5, 20); u8g2.print(l2); u8g2.print(v2);
+  u8g2.setCursor(5, 30); u8g2.print(l3); u8g2.print(v3);
 }
