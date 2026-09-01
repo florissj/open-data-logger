@@ -1,11 +1,18 @@
 # Documentation
 This document serves as the main guide on how to work with the datalogger. It is roughly divided into three parts:
 
-+ How to use the datalogger
++ Usage
 + Data processing
 + Further development
 
 For a less detailed manual, refer to the quick start guide.
+
+## Usage
+This part covers the steps on how to use the datalogger
+
+### 1. Setup
+To set up the logger, a configuration file needs to be present on its SD card
+[config.txt](/config.txt)
 
 ## Technical Details
 ### Main Components
